@@ -1,1 +1,1 @@
-RENV_CACHE_PATH=".cache"
+RENV_PATHS_CACHE=".cache"
