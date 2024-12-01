@@ -5,3 +5,4 @@
 
 library(languageserver)
 library(httpgd)
+library(rmarkdown)
