@@ -1,8 +1,9 @@
 # ---------------------------------------------------------------------------- #
 # File: dependencies.R
-# Description: Global dependencies
+# Description: Project dependencies
 # ---------------------------------------------------------------------------- #
 
-library(languageserver)
 library(httpgd)
+library(languageserver)
 library(rmarkdown)
+library(testthat)
