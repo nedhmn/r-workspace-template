@@ -1,0 +1,133 @@
+---
+title: Images for Scatterplot Points
+description: Trying to insert images as scatterplot points with highcharter
+author: Ned H
+date: 2024-12-15
+output:
+  html_document:
+    toc: true
+file_path: apps\highchart-scatterplot-imgs\main.Rmd
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.height = 6,
+  fig.width = 12,
+  fig.align = "center",
+  fig.path = "dist/images/"
+)
+```
+
+## Setup
+
+### Dependencies
+
+```{r}
+library(highcharter)
+library(tidyverse)
+```
+
+```{r include=FALSE}
+# readRenviron(".Renviron")
+```
+
+### Dummy data
+
+```{r}
+# Sample company data
+companies <- data.frame(
+  name = c("Apple", "Google", "Microsoft", "Amazon", "Meta", "Netflix"),
+  market_score = c(85, 75, 80, 90, 65, 70),
+  growth_score = c(90, 95, 85, 70, 75, 80),
+  revenue = c(365, 282, 198, 514, 116, 31.6),
+  website = c(
+    "apple.com",
+    "google.com",
+    "microsoft.com",
+    "amazon.com",
+    "meta.com",
+    "netflix.com"
+  )
+)
+```
+
+### Create Logo Util Function
+
+```{r}
+# Function to create logo URL
+create_logo_url <- function(website) {
+  sprintf(
+    "https://img.logo.dev/%s?token=%s&retina=true",
+    website,
+    Sys.getenv("LOGO_DEV_API")
+  )
+}
+```
+
+## Plot
+
+### Scatterplot with Company Logo
+
+```{r}
+# Create the scatter plot
+hchart <- highchart() %>%
+  hc_chart(type = "scatter") %>%
+  hc_title(text = "Tech Companies Market Performance") %>%
+  hc_xAxis(
+    title = list(text = "Market Score"),
+    min = 0,
+    max = 100
+  ) %>%
+  hc_yAxis(
+    title = list(text = "Growth Score"),
+    min = 0,
+    max = 100
+  ) %>%
+  hc_add_series(
+    data = companies %>%
+      purrr::pmap(function(name, market_score, growth_score, revenue, website) {
+        list(
+          x = market_score,
+          y = growth_score,
+          name = name,
+          revenue = revenue,
+          marker = list(
+            symbol = paste0("url(", create_logo_url(website), ")"),
+            width = 40,
+            height = 40
+          )
+        )
+      }),
+    tooltip = list(
+      pointFormat = paste(
+        "<b>{point.name}</b><br>",
+        "Market Score: {point.x}<br>",
+        "Growth Score: {point.y}<br>",
+        "Revenue: ${point.revenue}B"
+      )
+    )
+  ) %>%
+  hc_plotOptions(
+    scatter = list(
+      dataLabels = list(
+        enabled = TRUE,
+        format = "{point.name}",
+        y = 40
+      )
+    )
+  ) %>%
+  hc_legend(enabled = FALSE) %>%
+  hc_chart(
+    zoomType = "xy"
+  ) %>%
+  hc_credits(
+    enabled = TRUE,
+    text = "Source: Company Data | Logos: logo.dev"
+  )
+
+# Display the chart
+hchart
+```

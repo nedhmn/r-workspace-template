@@ -1,0 +1,115 @@
+---
+title: apps\sandbox\main.Rmd
+date: 2024-12-14
+description: 
+---
+
+```{r}
+setwd(paste0(getwd(), "/apps/sandbox"))
+```
+
+```{r}
+# Find all zip files to loop
+files_to_load <- list.files(
+    path = "data",
+    pattern = "\\.zip$",
+    ignore.case = TRUE,
+    full.names = TRUE
+)
+
+# Read column definitions to know
+# how to format, or clean, the donwloaded_tbl.
+defs_tbl <- readRDS("data/defs_tbl.rds")
+```
+
+```{r}
+tbl <- downloaded_tbl
+summary(downloaded_tbl)
+str(downloaded_tbl)
+
+clean_tbl_func <- function(tbl, defs_tbl) {
+    # Format dates
+    tbl$expirDate <- as.Date(tbl$expirDate, format = "%m/%d/%Y")
+    tbl$trade_date <- as.Date(tbl$trade_date, format = "%m/%d/%Y")
+    # Calculates dte column
+    tbl$dte <- as.integer(tbl$expirDate - tbl$trade_date)
+
+    # Format numerics and integers
+    tbl[, defs_tbl[defs_tbl$type == "numeric", ]$old_name, drop = FALSE] <- lapply(tbl[, defs_tbl[defs_tbl$type == "numeric", ]$old_name], as.numeric)
+    tbl[, defs_tbl[defs_tbl$type == "integer", ]$old_name] <- lapply(tbl[, defs_tbl[defs_tbl$type == "integer", ]$old_name], as.integer)
+
+    # Creates cOpra and pOpra columns if it doesn't exist (bug?)
+    tbl$cOpra <- paste0(tbl$ticker, format(tbl$expirDate, "%y%m%d"), "C", sprintf("%08d", as.integer(tbl$strike * 1000)))
+    tbl$pOpra <- paste0(tbl$ticker, format(tbl$expirDate, "%y%m%d"), "P", sprintf("%08d", as.integer(tbl$strike * 1000)))
+
+    # Format strings
+    tbl[, defs_tbl[defs_tbl$type == "string", ]$old_name] <- lapply(tbl[, defs_tbl[defs_tbl$type == "string", ]$old_name], as.character)
+
+    # Remove missing strike data (required by schema)
+    tbl <- tbl[!is.na(tbl$strike), ]
+
+    # Apply functions
+    tbl[, defs_tbl[defs_tbl$apply_outlier, ]$old_name] <- lapply(tbl[, defs_tbl[defs_tbl$apply_outlier, ]$old_name], function(x) {
+        ifelse(abs(x) > 1e5, NA, x)
+    })
+    tbl[, defs_tbl[defs_tbl$apply_round, ]$old_name] <- lapply(tbl[, defs_tbl[defs_tbl$apply_round, ]$old_name], round, digits = 6)
+    tbl[, defs_tbl[defs_tbl$apply_false_negative, ]$old_name] <- lapply(tbl[, defs_tbl[defs_tbl$apply_false_negative, ]$old_name], function(x) {
+        ifelse(x < 0, NA, x)
+    })
+
+    # Remove missing strike data (required by schema)
+    tbl <- tbl[!is.na(tbl$strike), ]
+
+    # Return formatted table
+    tbl
+}
+```
+
+```{r}
+file <- files_to_load
+for (file in files_to_load) {
+    # Unzip data and get csv path
+    unzip(file, exdir = "data")
+    unzipped_file_name <- sub(".zip", ".csv", file)
+
+    # Read csv table
+    downloaded_tbl <- fread(
+        file = unzipped_file_name,
+        encoding = "UTF-8",
+        data.table = FALSE
+    )
+
+    # Format table
+    clean_tbl <- clean_tbl_func(downloaded_tbl, defs_tbl)
+    data.table::setnames(
+        clean_tbl,
+        old = defs_tbl$old_name,
+        new = defs_tbl$new_name
+    )
+
+    if (nrow(clean_tbl) == 0) {
+        stop("clean_tbl has no data")
+    }
+
+    # Load clean_tbl to big query
+    bq_table_upload(
+        x = eod_snapshot_tbl,
+        values = clean_tbl,
+        write_disposition = "WRITE_APPEND"
+    )
+
+    # Logger
+    logger(
+        level = "info",
+        section = "send-data-to-big-query",
+        `function` = "send_data_to_big_query_func",
+        details = list(
+            file_sent = file
+        )
+    )
+
+    rm(list = c("downloaded_tbl", "clean_tbl"))
+    file.remove(c(file, unzipped_file_name))
+    invisible(gc())
+}
+```
